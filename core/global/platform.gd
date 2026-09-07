@@ -294,7 +294,11 @@ func _read_os() -> Array[PLATFORM]:
 		flags.append(PLATFORM.ARCH_LIKE)
 	if os_info.id == "nixos":
 		flags.append(PLATFORM.NIXOS)
-	if os_info.id == "bazzite":
+	# Rebased distros (e.g. YaguareteOS) set their own ID and carry
+	# "bazzite" only in ID_LIKE — the exact-match above misses them, which
+	# silently drops the whole PlatformBazzite feature set (session
+	# switcher, etc.) on any Bazzite derivative that rebrands ID.
+	if os_info.id == "bazzite" or "bazzite" in os_info.id_like.split(" "):
 		flags.append(PLATFORM.BAZZITE)
 
 	return flags
