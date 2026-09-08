@@ -13,7 +13,6 @@ const SESSION_SELECT_PATH := "/usr/bin/steamos-session-select"
 # session) rather than restoring it — that toggle is for Bazzite's own
 # stock OGUI package, not this fork.
 var OGUI_SESSION_OVERRIDE := "/".join([OS.get_environment("HOME"), ".config/gamescope-session-plus/sessions.d/ogui-steam"])
-const STOCK_STEAM_SESSION_CONTENT := "#!/usr/bin/bash\n\nSTEAM_SESSION_FILE=/usr/share/gamescope-session-plus/sessions.d/steam\n[[ -f \"${STEAM_SESSION_FILE}\" ]] && . \"${STEAM_SESSION_FILE}\"\n"
 
 
 func _init() -> void:
@@ -87,19 +86,23 @@ func _switch_session(name: String) -> void:
 		logger.error("Unable to switch sessions: " + out[0])
 
 
-## Points the "ogui-steam" session override at the stock Steam session
-## instead of this app's own binary, then restarts the session unit —
-## this process is what's running under it, so the restart kills it and
-## boots stock Steam. There is no button back to this app FROM Steam mode
-## yet (needs a small Decky Loader plugin to run from inside Steam's own
-## gamescope session); for now, restoring the override that points back
-## at this build's CLIENTCMD has to happen from Desktop mode.
+## Points the "ogui-steam" session override at this same binary run with
+## --overlay-mode instead of standalone, then restarts the session unit —
+## this process is what's running under it, so the restart kills it.
+## Deliberately NOT the bare stock Steam session (no OGUI at all): that
+## leaves no way back except editing files by hand, since the quick bar's
+## own "Switch to YaguareteUI" button (card_ui_overlay_mode.gd) only
+## exists inside an actual OGUI overlay-mode session — live-caught
+## 2026-09-07, a bare stock Steam session sent the "open overlay" button
+## straight to gamescope's own hardcoded Super+S screenshot shortcut
+## instead, since nothing was running to intercept it first.
 func _switch_to_steam_mode() -> void:
 	var f := FileAccess.open(OGUI_SESSION_OVERRIDE, FileAccess.WRITE)
 	if not f:
 		logger.error("Unable to write Steam session override at " + OGUI_SESSION_OVERRIDE)
 		return
-	f.store_string(STOCK_STEAM_SESSION_CONTENT)
+	var content := "#!/usr/bin/bash\nexport CLIENTCMD=\"%s --accessibility disabled --overlay-mode -- steam -gamepadui -steamos3 -steampal -steamdeck\"\n" % OS.get_executable_path()
+	f.store_string(content)
 	f.close()
 	OS.execute("chmod", ["+x", OGUI_SESSION_OVERRIDE])
 	OS.execute("systemctl", ["--user", "restart", "gamescope-session-plus@ogui-steam.service"])
