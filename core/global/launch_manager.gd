@@ -149,6 +149,16 @@ func _init() -> void:
 	var on_game_state_entered := func(_from: State):
 		if _current_app:
 			set_app_gamepad_profile(_current_app)
+			# Re-assert baselayer_window on every entry, not just the first.
+			# Opening the full in-game menu (Guide button) replaces
+			# main_menu_state — a real state transition, not a lightweight
+			# popup — so returning re-enters this same in-game state days
+			# after launch() 's own window_ids_changed closures already ran
+			# and will never fire again. Without this, gamescope never gets
+			# told to hand focus back to the game's window: live-caught
+			# 2026-09-07, BRAVELY DEFAULT II keeps running and rendering
+			# but stops receiving any input at all after closing the menu.
+			_current_app.grab_focus()
 
 		# If we don't want LaunchManager to manage overlay (I.E. overlay mode), return false always.
 		if not should_manage_overlay:
@@ -233,13 +243,27 @@ func launch(app: LibraryLaunchItem) -> RunningApp:
 			_execute_hooks(app, AppLifecycleHook.TYPE.EXIT)
 	running_app.state_changed.connect(on_app_state_changed)
 
-	# Focus any new windows that get created
+	# Focus any new windows that get created. Prefers a non-Steam window
+	# when one is available: a real Steam client bridged in for
+	# Steamworks (e.g. Aurelia's --steam, not launched via
+	# "steam://rungameid/" so is_steam_app() doesn't gate this the way it
+	# does in RunningApp's own Steam-specific tracking) keeps spawning
+	# tiny internal steamwebhelper windows for the lifetime of the game.
+	# Live-caught: a naive "first new window wins" here permanently
+	# focused a 2x1px steamwebhelper window instead of the actual game,
+	# which never got a chance to compete for focus.
 	var switch_to_new_window := func(old_windows: PackedInt64Array, new_windows: PackedInt64Array):
+		var candidate := -1
 		for window in new_windows:
 			if window in old_windows:
 				continue
-			running_app.switch_window(window)
-			break
+			if candidate == -1:
+				candidate = window
+			if not running_app.is_steam_window(window):
+				candidate = window
+				break
+		if candidate != -1:
+			running_app.switch_window(candidate)
 	running_app.window_ids_changed.connect(switch_to_new_window)
 
 	# Remove/restore focus if any windows get removed
@@ -254,6 +278,10 @@ func launch(app: LibraryLaunchItem) -> RunningApp:
 			return
 		# TODO: Use the most recently created window instead of just the first in the list
 		var new_window := new_windows[0]
+		for window in new_windows:
+			if not running_app.is_steam_window(window):
+				new_window = window
+				break
 		running_app.switch_window(new_window)
 	running_app.window_ids_changed.connect(remove_focus)
 

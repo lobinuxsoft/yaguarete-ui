@@ -527,4 +527,4 @@ msgid "Reboot"
 msgstr "Reiniciar"
 
 msgid "Shutdown"
-msgstr "Cerrar"
+msgstr "Apagar"

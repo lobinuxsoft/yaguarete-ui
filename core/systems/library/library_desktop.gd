@@ -70,6 +70,19 @@ func _desktop_file_to_launch_item(file: String) -> LibraryLaunchItem:
 	# Apply any launch quirks if applicable
 	_apply_quirks(launch_item)
 
+	# A Steam-app shortcut ("steam ... steam://rungameid/<id>") duplicates
+	# whatever launch_item the dedicated Steam library plugin already built
+	# for the same app id, as a competing "desktop" provider for the same
+	# LibraryItem. Whichever provider settings.cfg locks in first wins for
+	# every future launch (loaded once at boot, not re-evaluated), and this
+	# one can only ever run the raw Steam client — it has no Goldberg/umu
+	# path, so it's never a useful choice for a Steam-owned app and only
+	# creates ambiguity. Skip it outright instead of relying on a
+	# per-game provider setting to route around it.
+	if launch_item.command == "steam" and _contains_string(launch_item.args, "steam://rungameid"):
+		logger.debug("Desktop item '" + file + "' is a Steam app shortcut. Skipping in favor of the Steam library provider.")
+		return null
+
 	# Check to see if the command exists in the blacklist
 	for item in blacklist:
 		var cmd := launch_item.command + " ".join(launch_item.args)

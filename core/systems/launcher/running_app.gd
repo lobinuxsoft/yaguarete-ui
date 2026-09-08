@@ -293,6 +293,18 @@ func update_steam_xwayland_app(app_pids: PackedInt64Array) -> void:
 				if state_steam == STATE.MISSING_WINDOW:
 					state_steam = STATE.RUNNING
 				break
+
+		# A missing window doesn't mean the game closed if its process tree
+		# is still alive — shader compilation and cold Proton/Wine startup
+		# can leave the game with no mapped X11 window for longer than the
+		# timeout below, and only Steam's own windows visible in the
+		# meantime. Checking live PIDs directly (not just window presence)
+		# avoids killing a game that's simply still loading.
+		if only_steam_running and _has_live_non_steam_process(app_pids):
+			only_steam_running = false
+			if state_steam == STATE.MISSING_WINDOW:
+				state_steam = STATE.RUNNING
+
 		if only_steam_running and state_steam == STATE.RUNNING:
 			state_steam = STATE.MISSING_WINDOW
 			steam_missing_window_timestamp = Time.get_ticks_msec()
@@ -420,10 +432,18 @@ func grab_focus() -> void:
 		new_focused_apps.push_back(GamescopeInstance.OVERLAY_GAME_ID)
 		xwayland_primary.baselayer_apps = new_focused_apps
 
-	# Set the baselayer window id
+	# Set the baselayer window id. Prefer a non-Steam window over the raw
+	# first-by-XID entry — a real Steam client bridged in alongside this
+	# app (e.g. Aurelia's --steam) fills window_ids with tiny internal
+	# steamwebhelper windows created before the actual game window, so
+	# window_ids[0] (sorted by XID) picks a phantom window forever.
 	var focus_window := self.last_focused_window_id
 	if not focus_window in self.window_ids:
 		focus_window = self.window_ids[0]
+		for window in self.window_ids:
+			if not is_steam_window(window):
+				focus_window = window
+				break
 	xwayland_primary.baselayer_window = focus_window
 	self.focused = true
 
@@ -523,6 +543,21 @@ func is_steam_window(window_id: int) -> bool:
 		if process_name in ["steam", "steamwebhelper"]:
 			return true
 
+	return false
+
+
+## Returns true if any tracked PID other than Steam's own client/webhelper
+## process is still alive.
+func _has_live_non_steam_process(app_pids: PackedInt64Array) -> bool:
+	for child_pid in app_pids:
+		if not OS.is_process_running(child_pid):
+			continue
+		var pid_info := Reaper.get_pid_status(child_pid)
+		if not "Name" in pid_info:
+			continue
+		var process_name := pid_info["Name"] as String
+		if not process_name in ["steam", "steamwebhelper"]:
+			return true
 	return false
 
 

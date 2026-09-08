@@ -188,6 +188,24 @@ func _setup_overlay_mode(args: PackedStringArray) -> void:
 	_remove_children(remove_list, quick_bar_menu)
 	_remove_children(settings_remove_list, settings_menu)
 
+	# Touch/mouse-driven toggle, independent of the Guide-button gamepad
+	# chord above — that chord depends on InputPlumber emitting a "ui_guide"
+	# dbus event for this exact controller, which this device's own profile
+	# never does (live-caught 2026-09-07, ONEXPLAYER ONEXFLY: "No input icon
+	# mapping found for device"), so Guide presses go straight to Steam's
+	# own menu instead of ever reaching OGUI. A plain Control touch input
+	# doesn't go through InputPlumber's gamepad remapping at all, so this
+	# keeps working regardless of that gap. Lives inside quick_bar_menu's
+	# own scene tree (next to PerformanceCard) — find_child, not $%Name,
+	# since a unique name declared inside an instanced child scene isn't
+	# reachable via % from this parent scene's own script.
+	var toggle_button := quick_bar_menu.find_child("OverlaySteamToggleButton", true, false)
+	if toggle_button:
+		toggle_button.visible = true
+		toggle_button.pressed.connect(_on_toggle_pressed)
+	else:
+		logger.error("Unable to find OverlaySteamToggleButton in QuickBarMenu")
+
 	# Enable InputPlumber management of all supported input devices
 	input_plumber.manage_all_devices = true
 
@@ -287,6 +305,29 @@ func _find_underlay_window_id() -> void:
 		underlay_window_timer.timeout.connect(_find_underlay_window_id)
 		add_child(underlay_window_timer)
 		underlay_window_timer.start()
+
+
+## Drops out of overlay mode entirely, back to plain standalone
+## YaguareteUI with no Steam underlay at all — not just an input-focus
+## toggle within this same session (that leaves Steam running, which
+## isn't what this button is for: swapping the "ogui-steam" gamescope
+## session override back to a bare CLIENTCMD and restarting the unit is
+## the same mechanism PlatformBazzite's own "Switch to Steam" button uses
+## in the other direction. This process is what's running under that
+## unit, so the restart kills it — self-terminating is the point, not a
+## bug to guard against.
+func _on_toggle_pressed() -> void:
+	var home := OS.get_environment("HOME")
+	var override_path := "/".join([home, ".config/gamescope-session-plus/sessions.d/ogui-steam"])
+	var content := "#!/usr/bin/bash\nexport CLIENTCMD=\"%s --accessibility disabled\"\n" % OS.get_executable_path()
+	var f := FileAccess.open(override_path, FileAccess.WRITE)
+	if not f:
+		logger.error("Unable to write session override at " + override_path)
+		return
+	f.store_string(content)
+	f.close()
+	OS.execute("chmod", ["+x", override_path])
+	OS.execute("systemctl", ["--user", "restart", "gamescope-session-plus@ogui-steam.service"])
 
 
 ## Called when the base state is entered.

@@ -10,7 +10,6 @@ var logger := Log.get_logger("PowerMenu")
 @onready var suspend_button := $%SuspendButton
 @onready var reboot_button := $%RebootButton
 @onready var shutdown_button := $%ShutdownButton
-@onready var exit_button := $%ExitButton
 @onready var cancel_button := $%CancelButton
 
 
@@ -20,7 +19,6 @@ func _ready() -> void:
 	suspend_button.button_down.connect(_on_systemctl_cmd.bind("suspend"))
 	shutdown_button.button_down.connect(_on_systemctl_cmd.bind("poweroff"))
 	reboot_button.button_down.connect(_on_systemctl_cmd.bind("reboot"))
-	exit_button.button_down.connect(_on_exit)
 	cancel_button.button_up.connect(_on_cancel)
 
 
@@ -36,10 +34,6 @@ func _on_systemctl_cmd(command: String) -> void:
 		if OS.execute("systemctl", [command], output) != OK:
 			logger.warn("Failed to " + command + ": '" + output[0] + "'")
 	exec.call_deferred()
-
-
-func _on_exit() -> void:
-	get_tree().quit()
 
 
 func _on_cancel() -> void:
